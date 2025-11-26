@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Simulated AI Trading Lab</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <!-- Fonts & Icons -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet"
+        href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+
+  <!-- Your stylesheet -->
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="container">
+  <div class="header-row">
+    <div>
+      <h1>Simulated AI Trading Lab</h1>
+      <p class="subtitle">
+        Visual sandbox for experimenting with automated strategy logic — <strong>no real funds, no real trades</strong>.
+      </p>
+    </div>
+    <div>
+      <div class="bot-pill">
+        <span class="pulse-dot"></span>
+        AI Strategy Engine • Demo
+      </div>
+    </div>
+  </div>
+
+  <!-- Wallet section (simulated) -->
+  <div id="walletSection" class="wallet-info" style="display:none;">
+    <div class="wallet-left">
+      <div class="wallet-label">
+        <i class="fas fa-wallet"></i>
+        Connected Demo Wallet
+      </div>
+      <div id="walletAddress" class="wallet-address"></div>
+    </div>
+    <button id="disconnectWallet" class="button-ghost">
+      <i class="fas fa-sign-out-alt"></i>
+      Disconnect
+    </button>
+  </div>
+
+  <div id="connectSection" style="margin-bottom:18px; text-align:center;">
+    <button id="connectWallet" class="button-primary">
+      <i class="fas fa-plug"></i>
+      Connect Demo Wallet
+    </button>
+  </div>
+
+  <!-- Top dashboard -->
+  <div class="dashboard-grid">
+    <!-- Left: Risk & Volatility -->
+    <div class="card">
+      <div class="card-title">
+        <i class="fas fa-wave-square"></i>
+        Market Regime & Volatility
+      </div>
+      <div id="volValue" class="card-main-value">12.5%</div>
+      <div class="card-subtext" id="regimeText">
+        Regime: <strong>Sideways</strong> · Simulated ETH/USDT cluster
+      </div>
+      <div class="mini-chart">
+        <div class="mini-line">
+          <div class="mini-dot"></div>
+        </div>
+      </div>
+      <div class="status-row" style="margin-top: 10px;">
+        <div class="metric-tag" id="volComment">
+          Volatility: calm, mean-reversion favorable.
+        </div>
+        <div class="metric-tag">
+          Next refresh in <span id="volRefresh">3s</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right: Bot Status / PnL snapshot -->
+    <div class="card">
+      <div class="card-title">
+        <i class="fas fa-robot"></i>
+        Bot Status
+      </div>
+      <div id="botSnapshot" class="card-main-value">
+        Idle · Awaiting configuration
+      </div>
+      <div class="card-subtext">
+        AI engine will simulate long/short decisions based on your risk profile and pair selection.
+      </div>
+      <div class="status-row">
+        <div id="statusChip" class="status-chip inactive">
+          <span class="pulse-dot" style="background:#9ca3af; box-shadow:none;"></span>
+          <span id="statusChipText">INACTIVE</span>
+        </div>
+        <div class="metric-tag">
+          Last cycle: <span id="lastCycleText">–</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Setup section -->
+  <div class="strategy-section">
+    <h3 class="section-title">
+      <i class="fas fa-sliders-h"></i>
+      Strategy Configuration
+    </h3>
+    <p class="section-text">
+      Use this panel to configure a <strong>simulated</strong> trading bot. It will continuously generate fake trades,
+      PnL and metrics so you can practice reading dashboards and thinking about risk — without touching real money.
+    </p>
+
+    <div class="steps">
+      <div id="step1" class="step">
+        <div class="step-number">1</div>
+        Connect
+      </div>
+      <div id="step2" class="step">
+        <div class="step-number">2</div>
+        Configure
+      </div>
+      <div id="step3" class="step">
+        <div class="step-number">3</div>
+        Start Bot
+      </div>
+    </div>
+
+    <div class="input-row">
+      <div class="input-group">
+        <label for="pairSelect">
+          Trading Pair
+        </label>
+        <select id="pairSelect">
+          <option value="BTC/USDT">BTC / USDT</option>
+          <option value="ETH/USDT">ETH / USDT</option>
+          <option value="SOL/USDT">SOL / USDT</option>
+          <option value="LINK/USDT">LINK / USDT</option>
+        </select>
+        <div class="hint">
+          This only affects the labels & simulated volatility profile.
+        </div>
+      </div>
+      <div class="input-group">
+        <label for="riskSelect">
+          Risk Mode
+        </label>
+        <select id="riskSelect">
+          <option value="conservative">Conservative</option>
+          <option value="balanced" selected>Balanced</option>
+          <option value="aggressive">Aggressive</option>
+        </select>
+        <div class="hint">
+          Higher risk = larger swings in simulated PnL.
+        </div>
+      </div>
+      <div class="input-group">
+        <label for="sizeInput">
+          Simulated Capital (USDT)
+        </label>
+        <input type="number" id="sizeInput" placeholder="e.g. 5000" min="100" step="100">
+        <div class="hint">
+          Purely cosmetic — no real funds involved.
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:8px;">
+      <button id="applyConfig" class="button-primary" style="flex:1 1 220px;">
+        <i class="fas fa-microchip"></i>
+        Apply Configuration
+      </button>
+      <button id="toggleBot" class="button-ghost" style="flex:0 1 170px;" disabled>
+        <i class="fas fa-play"></i>
+        Start Bot
+      </button>
+    </div>
+
+    <div id="configStatus" class="status-banner info">
+      <i class="fas fa-circle-info"></i>
+      <span>
+        Waiting for configuration. Choose a pair, risk mode and capital, then click <strong>Apply Configuration</strong>.
+      </span>
+    </div>
+  </div>
+
+  <!-- Trade interface -->
+  <div id="tradeInterface" class="trade-interface">
+    <div class="strategy-section">
+      <div class="trade-header-row">
+        <h3 class="section-title" style="margin-bottom:0;">
+          <i class="fas fa-chart-line"></i>
+          Live Simulation
+        </h3>
+        <div class="small-row">
+          <span id="livePulse" class="pulse-dot" style="background:#9ca3af; box-shadow:none;"></span>
+          <span id="liveStatusText">Bot inactive</span>
+        </div>
+      </div>
+
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-label">Total Simulated PnL</div>
+          <div id="pnlValue" class="stat-value green">
+            +0.00%
+          </div>
+          <div id="pnlNote" class="stat-note">
+            Based on your virtual capital.
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Win Rate & Cycles</div>
+          <div id="cycleValue" class="stat-value orange">
+            0 wins · 0 losses
+          </div>
+          <div class="stat-note">
+            Completed cycles: <span id="cycleCount">0</span> · Sharpe (fake): <span id="sharpeValue">0.0</span>
+          </div>
+        </div>
+      </div>
+
+      <div id="tradeLog" class="trade-log"></div>
+
+      <div class="trade-actions">
+        <button id="withdrawBtn" class="button-withdraw">
+          <i class="fas fa-money-bill-wave"></i>
+          Simulate Withdraw
+        </button>
+      </div>
+
+      <div class="fine-print">
+        All numbers here are generated locally in your browser. Use this as a UI playground, not as trading advice.
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Withdraw Modal -->
+<div id="modalBackdrop" class="modal-backdrop">
+  <div class="modal">
+    <h3><i class="fas fa-circle-check"></i> Withdraw Simulation</h3>
+    <p>Your virtual profits have been "sent" back to the demo wallet.</p>
+    <p>In a real implementation, this is where a secure payout flow would live.</p>
+    <button id="closeModal" class="close-modal">
+      Close
+    </button>
+  </div>
+</div>
+
+<!-- Your script -->
+<script src="script.js"></script>
+</body>
+</html>
