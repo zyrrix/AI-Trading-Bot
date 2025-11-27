@@ -1,394 +1,374 @@
-document.addEventListener("DOMContentLoaded", function () {
-  // Elements
-  const connectWalletBtn = document.getElementById("connectWallet");
-  const disconnectWalletBtn = document.getElementById("disconnectWallet");
-  const walletSection = document.getElementById("walletSection");
-  const connectSection = document.getElementById("connectSection");
+// --- NAVIGATION BETWEEN SECTIONS ---
+document.addEventListener("DOMContentLoaded", () => {
+  const navLinks = document.querySelectorAll(".nav-link");
+  const sections = document.querySelectorAll(".page-section");
+
+  navLinks.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const target = btn.getAttribute("data-section");
+
+      // Update nav active
+      navLinks.forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+
+      // Show the target section
+      sections.forEach((sec) => {
+        sec.classList.toggle("active", sec.id === target);
+      });
+    });
+  });
+
+  initMetaMask();
+  initMarket();
+  initBotSimulation();
+  initTools();
+});
+
+// --- METAMASK / WALLET CONNECT ---
+function initMetaMask() {
+  const connectButton = document.getElementById("connectButton");
   const walletAddressEl = document.getElementById("walletAddress");
+  const walletBalanceEl = document.getElementById("walletBalance");
+  const networkLabelEl = document.getElementById("networkLabel");
 
-  const step1 = document.getElementById("step1");
-  const step2 = document.getElementById("step2");
-  const step3 = document.getElementById("step3");
+  let currentAccount = null;
 
-  const pairSelect = document.getElementById("pairSelect");
-  const riskSelect = document.getElementById("riskSelect");
-  const sizeInput = document.getElementById("sizeInput");
-  const applyConfigBtn = document.getElementById("applyConfig");
-  const toggleBotBtn = document.getElementById("toggleBot");
-  const configStatus = document.getElementById("configStatus");
+  function shortAddr(addr) {
+    return addr.slice(0, 6) + "..." + addr.slice(-4);
+  }
 
-  const volValue = document.getElementById("volValue");
-  const regimeText = document.getElementById("regimeText");
-  const volComment = document.getElementById("volComment");
-  const volRefresh = document.getElementById("volRefresh");
+  function chainName(chainIdHex) {
+    // Basic mapping for major chains
+    const id = parseInt(chainIdHex, 16);
+    switch (id) {
+      case 1:
+        return "Ethereum Mainnet";
+      case 5:
+        return "Goerli Testnet";
+      case 11155111:
+        return "Sepolia Testnet";
+      case 137:
+        return "Polygon";
+      case 42161:
+        return "Arbitrum One";
+      default:
+        return `Chain ID ${id}`;
+    }
+  }
 
-  const botSnapshot = document.getElementById("botSnapshot");
-  const statusChip = document.getElementById("statusChip");
-  const statusChipText = document.getElementById("statusChipText");
-  const lastCycleText = document.getElementById("lastCycleText");
+  async function updateBalance() {
+    if (!window.ethereum || !currentAccount) return;
+    try {
+      const balanceHex = await window.ethereum.request({
+        method: "eth_getBalance",
+        params: [currentAccount, "latest"],
+      });
+      const balanceWei = BigInt(balanceHex);
+      const ethBalance = Number(balanceWei) / 1e18;
+      walletBalanceEl.textContent = `${ethBalance.toFixed(4)} ETH`;
+    } catch (err) {
+      console.error("Balance error:", err);
+      walletBalanceEl.textContent = "";
+    }
+  }
 
-  const tradeInterface = document.getElementById("tradeInterface");
-  const livePulse = document.getElementById("livePulse");
-  const liveStatusText = document.getElementById("liveStatusText");
-  const tradeLog = document.getElementById("tradeLog");
+  async function updateNetwork() {
+    if (!window.ethereum) {
+      networkLabelEl.textContent = "No Wallet";
+      return;
+    }
+    try {
+      const chainId = await window.ethereum.request({
+        method: "eth_chainId",
+      });
+      networkLabelEl.textContent = chainName(chainId);
+    } catch (err) {
+      console.error("Chain error:", err);
+    }
+  }
 
-  const pnlValue = document.getElementById("pnlValue");
-  const pnlNote = document.getElementById("pnlNote");
-  const cycleValue = document.getElementById("cycleValue");
-  const cycleCountEl = document.getElementById("cycleCount");
-  const sharpeValueEl = document.getElementById("sharpeValue");
-  const withdrawBtn = document.getElementById("withdrawBtn");
+  async function connect() {
+    if (!window.ethereum) {
+      alert("MetaMask not detected. Please install it first.");
+      return;
+    }
+    try {
+      const accounts = await window.ethereum.request({
+        method: "eth_requestAccounts",
+      });
+      currentAccount = accounts[0];
+      walletAddressEl.textContent = shortAddr(currentAccount);
+      connectButton.textContent = "Connected";
+      connectButton.disabled = true;
+      await updateNetwork();
+      await updateBalance();
 
-  const modalBackdrop = document.getElementById("modalBackdrop");
-  const closeModal = document.getElementById("closeModal");
+      // Listen to changes
+      window.ethereum.on("accountsChanged", (accs) => {
+        if (!accs || accs.length === 0) {
+          currentAccount = null;
+          walletAddressEl.textContent = "Not connected";
+          walletBalanceEl.textContent = "";
+          connectButton.textContent = "Connect MetaMask";
+          connectButton.disabled = false;
+        } else {
+          currentAccount = accs[0];
+          walletAddressEl.textContent = shortAddr(currentAccount);
+          updateBalance();
+        }
+      });
 
-  // State
-  let demoWallet = null;
-  let configApplied = false;
-  let botRunning = false;
+      window.ethereum.on("chainChanged", () => {
+        updateNetwork();
+        updateBalance();
+      });
+    } catch (err) {
+      console.error("MetaMask connection error:", err);
+      alert("Failed to connect wallet.");
+    }
+  }
 
-  let volInterval = null;
-  let volCountdownInterval = null;
-  let simInterval = null;
+  connectButton.addEventListener("click", connect);
+}
 
-  let virtualCapital = 0;
-  let totalPnLPercent = 0;
-  let wins = 0;
-  let losses = 0;
+// --- MARKET CHART + PRICES ---
+function initMarket() {
+  const ctx = document.getElementById("marketChart").getContext("2d");
+  const statusEl = document.getElementById("marketStatus");
+  const tableBody = document.getElementById("marketTableBody");
+  const refreshButton = document.getElementById("refreshMarketButton");
+
+  const coins = [
+    { id: "bitcoin", symbol: "BTC", color: "#f97316" },
+    { id: "ethereum", symbol: "ETH", color: "#3b82f6" },
+    { id: "solana", symbol: "SOL", color: "#22c55e" },
+    { id: "binancecoin", symbol: "BNB", color: "#eab308" },
+  ];
+
+  let marketChart = new Chart(ctx, {
+    type: "line",
+    data: { labels: [], datasets: [] },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          labels: { color: "#e5e7eb", font: { size: 11 } },
+        },
+      },
+      scales: {
+        x: {
+          ticks: { color: "#9ca3af", maxRotation: 0, autoSkip: true },
+          grid: { color: "rgba(31,41,55,0.5)" },
+        },
+        y: {
+          ticks: { color: "#9ca3af" },
+          grid: { color: "rgba(31,41,55,0.6)" },
+        },
+      },
+    },
+  });
+
+  async function fetchMarketChart() {
+    statusEl.textContent = "Loading data…";
+    statusEl.className = "tag tag-info";
+
+    try {
+      const promises = coins.map((coin) =>
+        fetch(
+          `https://api.coingecko.com/api/v3/coins/${coin.id}/market_chart?vs_currency=usd&days=1&interval=hourly`
+        ).then((r) => r.json())
+      );
+
+      const results = await Promise.all(promises);
+
+      const labels = results[0].prices.map((p) => {
+        const d = new Date(p[0]);
+        return `${d.getHours().toString().padStart(2, "0")}:00`;
+      });
+
+      const datasets = results.map((res, idx) => {
+        const coin = coins[idx];
+        return {
+          label: coin.symbol,
+          data: res.prices.map((p) => p[1]),
+          borderColor: coin.color,
+          backgroundColor: "transparent",
+          borderWidth: 1.4,
+          tension: 0.3,
+        };
+      });
+
+      marketChart.data.labels = labels;
+      marketChart.data.datasets = datasets;
+      marketChart.update();
+
+      statusEl.textContent = "Updated";
+      statusEl.className = "tag tag-info";
+    } catch (err) {
+      console.error("Chart error:", err);
+      statusEl.textContent = "Error loading data";
+      statusEl.className = "tag tag-info";
+    }
+  }
+
+  async function fetchMarketTable() {
+    try {
+      const ids = coins.map((c) => c.id).join(",");
+      const url = `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=${ids}`;
+      const res = await fetch(url);
+      const data = await res.json();
+
+      tableBody.innerHTML = "";
+      data.forEach((coin) => {
+        const tr = document.createElement("tr");
+
+        const tdName = document.createElement("td");
+        tdName.textContent = coin.name;
+
+        const tdSym = document.createElement("td");
+        tdSym.textContent = coin.symbol.toUpperCase();
+
+        const tdPrice = document.createElement("td");
+        tdPrice.textContent = `$${coin.current_price.toLocaleString(undefined, {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 8,
+        })}`;
+
+        const tdChange = document.createElement("td");
+        const change = coin.price_change_percentage_24h;
+        const changeText =
+          change === null
+            ? "–"
+            : `${change.toFixed(2)}%`;
+        tdChange.textContent = changeText;
+        if (change > 0) tdChange.classList.add("change-positive");
+        if (change < 0) tdChange.classList.add("change-negative");
+
+        tr.appendChild(tdName);
+        tr.appendChild(tdSym);
+        tr.appendChild(tdPrice);
+        tr.appendChild(tdChange);
+
+        tableBody.appendChild(tr);
+      });
+    } catch (err) {
+      console.error("Table error:", err);
+      tableBody.innerHTML =
+        '<tr><td colspan="4" class="placeholder">Failed to load data.</td></tr>';
+    }
+  }
+
+  async function refreshMarket() {
+    await fetchMarketChart();
+    await fetchMarketTable();
+  }
+
+  refreshMarket();
+  refreshButton.addEventListener("click", refreshMarket);
+
+  // Optional: auto refresh every 60s
+  setInterval(refreshMarket, 60000);
+}
+
+// --- BOT SIMULATION (SAFE / LOCAL ONLY) ---
+function initBotSimulation() {
+  const statusDot = document.getElementById("botStatusDot");
+  const statusText = document.getElementById("botStatusText");
+  const pnlEl = document.getElementById("botPnL");
+  const cyclesEl = document.getElementById("botCycles");
+  const logBox = document.getElementById("botLog");
+  const startBtn = document.getElementById("startBotButton");
+  const stopBtn = document.getElementById("stopBotButton");
+
+  let running = false;
+  let intervalId = null;
+  let pnl = 0;
   let cycles = 0;
 
-  function randBetween(min, max, decimals = 2) {
-    const val = Math.random() * (max - min) + min;
-    return parseFloat(val.toFixed(decimals));
-  }
-
-  function shortAddress() {
-    const hex =
-      Math.random().toString(16).substring(2, 10) +
-      Math.random().toString(16).substring(2, 10);
-    return "0x" + hex;
-  }
-
-  function setStepState() {
-    step1.classList.remove("active", "completed");
-    step2.classList.remove("active", "completed");
-    step3.classList.remove("active", "completed");
-
-    if (demoWallet) {
-      step1.classList.add("completed");
-    } else {
-      step1.classList.add("active");
-      return;
-    }
-
-    if (configApplied) {
-      step2.classList.add("completed");
-    } else {
-      step2.classList.add("active");
-      return;
-    }
-
-    if (botRunning) {
-      step3.classList.add("completed");
-    } else {
-      step3.classList.add("active");
+  function log(message) {
+    const entry = document.createElement("div");
+    entry.className = "log-entry";
+    const time = new Date().toLocaleTimeString();
+    entry.innerHTML = `<span class="time">[${time}]</span> ${message}`;
+    logBox.prepend(entry);
+    if (logBox.children.length > 80) {
+      logBox.removeChild(logBox.lastChild);
     }
   }
 
-  function logTrade(_type, msg, extraClass) {
-    const row = document.createElement("div");
-    row.className = "trade-row " + (extraClass || "");
-    const timeStr = new Date().toLocaleTimeString();
-    row.innerHTML = `<span class="time-tag">[${timeStr}]</span> ${msg}`;
-    tradeLog.insertBefore(row, tradeLog.firstChild);
-
-    if (tradeLog.children.length > 120) {
-      tradeLog.removeChild(tradeLog.lastChild);
-    }
+  function updateUi() {
+    const sign = pnl >= 0 ? "+" : "";
+    pnlEl.textContent = `${sign}${pnl.toFixed(2)}%`;
+    pnlEl.classList.toggle("green", pnl >= 0);
+    cyclesEl.textContent = cycles.toString();
   }
 
-  function updateDashboardFromState() {
-    const sign = totalPnLPercent >= 0 ? "+" : "";
-    pnlValue.textContent = `${sign}${totalPnLPercent.toFixed(2)}%`;
-    pnlValue.classList.toggle("green", totalPnLPercent >= 0);
+  function start() {
+    if (running) return;
+    running = true;
+    statusDot.classList.remove("offline");
+    statusDot.classList.add("online");
+    statusText.textContent = "Simulating";
+    startBtn.disabled = true;
+    stopBtn.disabled = false;
 
-    const usedCap = virtualCapital || 0;
-    pnlNote.textContent =
-      usedCap > 0
-        ? `On ${usedCap.toLocaleString()} USDT of simulated capital.`
-        : "Set simulated capital to get more realistic numbers.";
+    log("Simulation started. This does not place real trades.");
 
-    const totalTrades = wins + losses || 1;
-    const winRate = (wins / totalTrades) * 100;
-
-    cycleValue.textContent = `${wins} wins · ${losses} losses`;
-    cycleCountEl.textContent = cycles.toString();
-
-    const rawSharpe = Math.min(Math.max((winRate - 50) / 10, -1), 4);
-    const sharpe = rawSharpe + randBetween(-0.2, 0.2, 1);
-    sharpeValueEl.textContent = sharpe.toFixed(1);
-  }
-
-  function refreshVolatility() {
-    const risk = riskSelect.value;
-    let baseVol;
-    if (risk === "conservative") baseVol = randBetween(4, 12, 1);
-    else if (risk === "balanced") baseVol = randBetween(8, 18, 1);
-    else baseVol = randBetween(12, 28, 1);
-
-    volValue.textContent = baseVol.toFixed(1) + "%";
-
-    let regime;
-    let comment;
-    if (baseVol < 8) {
-      regime = "Calm";
-      comment = "Low volatility — mean-reversion friendly.";
-    } else if (baseVol < 16) {
-      regime = "Normal";
-      comment = "Moderate volatility — trend & pullbacks both viable.";
-    } else {
-      regime = "Explosive";
-      comment = "High volatility — tight risk management crucial.";
-    }
-
-    const pair = pairSelect.value;
-    regimeText.innerHTML = `Regime: <strong>${regime}</strong> · Simulated ${pair} cluster`;
-    volComment.textContent = comment;
-  }
-
-  function startVolTimers() {
-    if (volInterval) clearInterval(volInterval);
-    if (volCountdownInterval) clearInterval(volCountdownInterval);
-
-    let countdown = 3;
-    volRefresh.textContent = countdown + "s";
-
-    volInterval = setInterval(() => {
-      refreshVolatility();
-      countdown = 3;
-    }, 3000);
-
-    volCountdownInterval = setInterval(() => {
-      countdown -= 1;
-      if (countdown <= 0) countdown = 3;
-      volRefresh.textContent = countdown + "s";
-    }, 1000);
-  }
-
-  function stopVolTimers() {
-    if (volInterval) clearInterval(volInterval);
-    if (volCountdownInterval) clearInterval(volCountdownInterval);
-  }
-
-  function applyConfiguration() {
-    if (!demoWallet) {
-      configStatus.className = "status-banner error";
-      configStatus.innerHTML =
-        '<i class="fas fa-circle-exclamation"></i> Connect the demo wallet first.';
-      return;
-    }
-
-    const capital = parseFloat(sizeInput.value || "0");
-    if (isNaN(capital) || capital < 100) {
-      configStatus.className = "status-banner error";
-      configStatus.innerHTML =
-        '<i class="fas fa-circle-exclamation"></i> Please set at least 100 USDT of simulated capital.';
-      return;
-    }
-
-    virtualCapital = capital;
-    configApplied = true;
-    setStepState();
-
-    configStatus.className = "status-banner success";
-    configStatus.innerHTML =
-      '<i class="fas fa-check-circle"></i> Configuration applied. You can now start the simulation bot.';
-
-    toggleBotBtn.disabled = false;
-    toggleBotBtn.innerHTML = '<i class="fas fa-play"></i> Start Bot';
-
-    botSnapshot.textContent = `Configured · ${pairSelect.value} · ${riskSelect.value.toUpperCase()}`;
-    lastCycleText.textContent = "not started";
-
-    refreshVolatility();
-    startVolTimers();
-  }
-
-  function startSimulation() {
-    if (simInterval) clearInterval(simInterval);
-
-    botRunning = true;
-    setStepState();
-
-    livePulse.style.background = "#22c55e";
-    livePulse.style.boxShadow = "0 0 12px rgba(34,197,94,0.8)";
-    liveStatusText.textContent = "Simulation running";
-
-    statusChip.classList.remove("inactive");
-    statusChipText.textContent = "ONLINE";
-
-    botSnapshot.textContent = `Running · ${pairSelect.value} · ${riskSelect.value.toUpperCase()}`;
-    lastCycleText.textContent = "just now";
-
-    toggleBotBtn.innerHTML = '<i class="fas fa-pause"></i> Pause Bot';
-
-    tradeInterface.style.display = "block";
-
-    logTrade(
-      "info",
-      `<span class="type-info">Simulation started with ${pairSelect.value} · ${riskSelect.value.toUpperCase()} · ${virtualCapital.toLocaleString()} USDT.</span>`
-    );
-
-    if (!volInterval) {
-      refreshVolatility();
-      startVolTimers();
-    }
-
-    simInterval = setInterval(() => {
-      if (!botRunning) return;
-
-      const tradesInCycle = Math.floor(Math.random() * 3) + 1;
+    intervalId = setInterval(() => {
+      // Random small change
+      const delta = (Math.random() - 0.45) * 0.8; // slight bias positive
+      pnl += delta;
       cycles += 1;
-      lastCycleText.textContent = `cycle #${cycles}`;
+      const dir = delta >= 0 ? "profit" : "loss";
+      const text =
+        delta >= 0
+          ? `Cycle #${cycles}: +${delta.toFixed(2)}%`
+          : `Cycle #${cycles}: ${delta.toFixed(2)}%`;
 
-      for (let i = 0; i < tradesInCycle; i++) {
-        const side = Math.random() > 0.5 ? "BUY" : "SELL";
-        const typeClass = side === "BUY" ? "type-buy" : "type-sell";
-        const size = randBetween(0.02, 0.35, 3);
-        const entry = randBetween(100, 70000, 2);
-        const exitSpread = randBetween(-0.9, 0.9, 2);
-        const exit = entry + exitSpread;
-        const profitPct = randBetween(-0.6, 0.8, 2);
-        const profitAbs = virtualCapital * (profitPct / 100) * 0.02;
-
-        if (profitPct >= 0) {
-          wins += 1;
-          totalPnLPercent += profitPct * 0.1;
-          logTrade(
-            side,
-            `<span class="${typeClass}">${side}</span> ${size} ${
-              pairSelect.value.split("/")[0]
-            } @ ${entry.toFixed(2)} → ${exit.toFixed(2)} · ` +
-              `<span class="profit">+${profitPct.toFixed(2)}%</span> (~${profitAbs.toFixed(2)} USDT)`
-          );
-        } else {
-          losses += 1;
-          totalPnLPercent += profitPct * 0.1;
-          logTrade(
-            side,
-            `<span class="${typeClass}">${side}</span> ${size} ${
-              pairSelect.value.split("/")[0]
-            } @ ${entry.toFixed(2)} → ${exit.toFixed(2)} · ` +
-              `<span class="loss">${profitPct.toFixed(2)}%</span> (~${profitAbs.toFixed(2)} USDT)`
-          );
-        }
-      }
-
-      updateDashboardFromState();
-    }, 3500);
+      log(`<span class="${dir === "profit" ? "change-positive" : "change-negative"}">${text}</span>`);
+      updateUi();
+    }, 2500);
   }
 
-  function stopSimulation() {
-    botRunning = false;
-    setStepState();
-    if (simInterval) clearInterval(simInterval);
-
-    livePulse.style.background = "#9ca3af";
-    livePulse.style.boxShadow = "none";
-    liveStatusText.textContent = "Bot paused";
-
-    statusChip.classList.add("inactive");
-    statusChipText.textContent = "PAUSED";
-
-    toggleBotBtn.innerHTML = '<i class="fas fa-play"></i> Resume Bot';
+  function stop() {
+    if (!running) return;
+    running = false;
+    statusDot.classList.remove("online");
+    statusDot.classList.add("offline");
+    statusText.textContent = "Offline";
+    startBtn.disabled = false;
+    stopBtn.disabled = true;
+    if (intervalId) clearInterval(intervalId);
+    log("Simulation stopped.");
   }
 
-  // Handlers
-  connectWalletBtn.addEventListener("click", function () {
-    demoWallet = shortAddress();
-    walletAddressEl.textContent = demoWallet;
-    walletSection.style.display = "flex";
-    connectSection.style.display = "none";
+  startBtn.addEventListener("click", start);
+  stopBtn.addEventListener("click", stop);
 
-    setStepState();
-    configStatus.className = "status-banner info";
-    configStatus.innerHTML =
-      '<i class="fas fa-circle-info"></i> Demo wallet connected. Configure the bot and click <strong>Apply Configuration</strong>.';
-  });
+  updateUi();
+}
 
-  disconnectWalletBtn.addEventListener("click", function () {
-    demoWallet = null;
-    configApplied = false;
-    botRunning = false;
-    virtualCapital = 0;
-    totalPnLPercent = 0;
-    wins = 0;
-    losses = 0;
-    cycles = 0;
+// --- TOOLS (POSITION SIZE CALC) ---
+function initTools() {
+  const balanceInput = document.getElementById("toolBalance");
+  const riskInput = document.getElementById("toolRisk");
+  const resultEl = document.getElementById("toolResult");
+  const calcBtn = document.getElementById("calcPositionButton");
 
-    walletSection.style.display = "none";
-    connectSection.style.display = "block";
-    tradeInterface.style.display = "none";
+  calcBtn.addEventListener("click", () => {
+    const balance = parseFloat(balanceInput.value || "0");
+    const riskPct = parseFloat(riskInput.value || "0");
 
-    toggleBotBtn.disabled = true;
-    toggleBotBtn.innerHTML = '<i class="fas fa-play"></i> Start Bot';
-
-    statusChip.classList.add("inactive");
-    statusChipText.textContent = "INACTIVE";
-    botSnapshot.textContent = "Idle · Awaiting configuration";
-    lastCycleText.textContent = "–";
-
-    tradeLog.innerHTML = "";
-    stopSimulation();
-    stopVolTimers();
-    updateDashboardFromState();
-    setStepState();
-
-    configStatus.className = "status-banner info";
-    configStatus.innerHTML =
-      '<i class="fas fa-circle-info"></i> Wallet disconnected. Reconnect to use the simulation again.';
-  });
-
-  applyConfigBtn.addEventListener("click", applyConfiguration);
-
-  toggleBotBtn.addEventListener("click", function () {
-    if (!configApplied) {
-      applyConfiguration();
+    if (!balance || balance <= 0 || !riskPct || riskPct <= 0) {
+      resultEl.textContent = "Enter a valid balance and risk percentage.";
       return;
     }
-    if (botRunning) {
-      stopSimulation();
-    } else {
-      startSimulation();
-    }
+
+    const riskAmount = (balance * riskPct) / 100;
+    resultEl.textContent = `Max risk per trade: $${riskAmount.toFixed(2)} (at ${riskPct}% of $${balance.toFixed(
+      2
+    )}).`;
   });
+}
 
-  withdrawBtn.addEventListener("click", function () {
-    logTrade(
-      "info",
-      `<span class="type-info">Withdraw requested — simulation will reset PnL and cycle counters after this.</span>`
-    );
-    totalPnLPercent = 0;
-    wins = 0;
-    losses = 0;
-    cycles = 0;
-    updateDashboardFromState();
-
-    modalBackdrop.style.display = "flex";
-  });
-
-  closeModal.addEventListener("click", function () {
-    modalBackdrop.style.display = "none";
-  });
-
-  modalBackdrop.addEventListener("click", function (e) {
-    if (e.target === modalBackdrop) {
-      modalBackdrop.style.display = "none";
-    }
-  });
-
-  // Initial state
-  updateDashboardFromState();
-  refreshVolatility();
-  setStepState();
-});
